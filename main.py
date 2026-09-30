@@ -83,9 +83,12 @@ full_eval['predicted_tgt_sh'] = model.predict(full_eval[['off_tgt_sh', 'def_tgt_
 full_eval['script_delta'] = full_eval['predicted_tgt_sh'] - full_eval['off_tgt_sh']
 full_eval['Game'] = full_eval['away_team'] + " @ " + full_eval['home_team']
 
-# Select and rename columns for readability
+# Select columns
 cols = ['Game', 'Offense', 'Defense', 'position', 'off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']
 display_df = full_eval[cols].copy()
+
+# ---> THIS IS THE NEW LINE: Sort by Delta from highest to lowest BEFORE converting to strings
+display_df = display_df.sort_values(by='script_delta', ascending=False)
 
 # Convert long decimals to clean percentages (e.g. 0.175 -> 17.5%)
 for col in ['off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']:
@@ -99,11 +102,8 @@ display_df = display_df.rename(columns={
     'script_delta': 'Delta'
 })
 
-# Sort the data cleanly: Group by Game, then Offense, then Position
-display_df = display_df.sort_values(by=['Game', 'Offense', 'Pos'])
-
 print("\n=== WEEK 4 MATCHUP PROJECTIONS ===")
-print(display_df.head(12).to_string(index=False)) # Prints the first two full games to preview
+print(display_df.head(10).to_string(index=False))
 
 # Save the final clean version
 display_df.to_csv("weekly_predictions.csv", index=False)
