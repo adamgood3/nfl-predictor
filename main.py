@@ -57,30 +57,54 @@ model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.08, max_dept
 model.fit(X_train, y_train)
 
 # ---------------------------------------------------------
-# GENERATE PREDICTIONS FOR WEEK 4
+# GENERATE CLEAN PREDICTIONS FOR WEEK 4 MATCHUPS
 # ---------------------------------------------------------
 print("3. Generating predictions for Week 4 slate...")
 wk4_games = schedule[schedule['week'] == 4][['game_id', 'home_team', 'away_team']].dropna()
 
+# Evaluate Away Offenses (vs Home Defenses)
 away_eval = wk4_games.merge(off_profile, left_on='away_team', right_on='posteam').merge(
     def_profile, left_on=['home_team', 'position'], right_on=['defteam', 'position']
 )
-away_eval['predicted_tgt_sh'] = model.predict(away_eval[['off_tgt_sh', 'def_tgt_sh_allowed']])
-away_eval['script_delta'] = away_eval['predicted_tgt_sh'] - away_eval['off_tgt_sh']
-away_eval['matchup'] = away_eval['away_team'] + " @ " + away_eval['home_team']
+away_eval['Offense'] = away_eval['away_team']
+away_eval['Defense'] = away_eval['home_team']
 
-cols = ['matchup', 'position', 'off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']
-display_df = away_eval[cols].copy()
+# Evaluate Home Offenses (vs Away Defenses)
+home_eval = wk4_games.merge(off_profile, left_on='home_team', right_on='posteam').merge(
+    def_profile, left_on=['away_team', 'position'], right_on=['defteam', 'position']
+)
+home_eval['Offense'] = home_eval['home_team']
+home_eval['Defense'] = home_eval['away_team']
+
+# Combine both sides of the ball into one full slate
+full_eval = pd.concat([away_eval, home_eval], ignore_index=True)
+
+full_eval['predicted_tgt_sh'] = model.predict(full_eval[['off_tgt_sh', 'def_tgt_sh_allowed']])
+full_eval['script_delta'] = full_eval['predicted_tgt_sh'] - full_eval['off_tgt_sh']
+full_eval['Game'] = full_eval['away_team'] + " @ " + full_eval['home_team']
+
+# Select and rename columns for readability
+cols = ['Game', 'Offense', 'Defense', 'position', 'off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']
+display_df = full_eval[cols].copy()
+
+# Convert long decimals to clean percentages (e.g. 0.175 -> 17.5%)
+for col in ['off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']:
+    display_df[col] = (display_df[col] * 100).round(1).astype(str) + '%'
+
 display_df = display_df.rename(columns={
-    'off_tgt_sh': 'Off_Baseline',
-    'def_tgt_sh_allowed': 'Def_Allowed',
-    'predicted_tgt_sh': 'Projected_Share',
-    'script_delta': 'Matchup_Delta'
+    'position': 'Pos',
+    'off_tgt_sh': 'Off_Avg',
+    'def_tgt_sh_allowed': 'Def_Allows',
+    'predicted_tgt_sh': 'Projected',
+    'script_delta': 'Delta'
 })
 
-print("\n=== WEEK 4 GAME SCRIPT PREDICTIONS (AWAY TEAMS) ===")
-print(display_df.sort_values(by='Matchup_Delta', ascending=False).head(12).to_string(index=False))
+# Sort the data cleanly: Group by Game, then Offense, then Position
+display_df = display_df.sort_values(by=['Game', 'Offense', 'Pos'])
 
-# --- NEW STEP FOR GITHUB: SAVE AS CSV ---
-display_df.sort_values(by='Matchup_Delta', ascending=False).to_csv("weekly_predictions.csv", index=False)
-print("\nSuccess: Saved predictions to weekly_predictions.csv")
+print("\n=== WEEK 4 MATCHUP PROJECTIONS ===")
+print(display_df.head(12).to_string(index=False)) # Prints the first two full games to preview
+
+# Save the final clean version
+display_df.to_csv("weekly_predictions.csv", index=False)
+print("\nSuccess: Saved clean predictions to weekly_predictions.csv")
