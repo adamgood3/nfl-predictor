@@ -2,12 +2,11 @@ name: Weekly NFL Predictions
 
 on:
   schedule:
-    # Runs at 12:00 UTC (5:00 AM Pacific Time for Walnut, CA) every Thursday
     - cron: '0 12 * * 4'
-  workflow_dispatch: # Adds a manual "Run workflow" button to the Actions tab
+  workflow_dispatch: 
 
 permissions:
-  contents: write # Grants the bot permission to save the CSV back to the repo
+  contents: write 
 
 jobs:
   run-model:
@@ -19,11 +18,10 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14' # Matching your local environment
+          python-version: '3.14' 
 
       - name: Install Dependencies
-        run: |
-          pip install pandas scikit-learn nfl_data_py
+        run: pip install pandas scikit-learn nfl_data_py pyarrow
 
       - name: Run Predictive Engine
         run: python3 main.py
@@ -33,6 +31,5 @@ jobs:
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "action@github.com"
           git add weekly_predictions.csv
-          # The '|| exit 0' prevents the workflow from failing if the data hasn't changed
           git commit -m "Automated prediction update" || exit 0
           git push
