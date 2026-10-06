@@ -6,7 +6,8 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 
 print("1. Ingesting live 2026 data, schedules, and depth charts...")
-pbp = nfl.import_pbp_data([2026])
+# Bypass nfl_data_py's broken participation merge by reading the raw parquet file directly
+pbp = pd.read_parquet('https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet')
 schedule = nfl.import_schedules([2026])
 depth_charts = nfl.import_depth_charts([2026])
 
