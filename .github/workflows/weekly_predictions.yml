@@ -26,10 +26,10 @@ jobs:
       - name: Run Predictive Engine
         run: python3 main.py
 
-      - name: Commit and Push Updated CSV
+      - name: Commit and Push Updated Results
         run: |
           git config --global user.name "GitHub Action Bot"
           git config --global user.email "action@github.com"
-          git add weekly_predictions.csv
-          git commit -m "Automated prediction update" || exit 0
+          git add weekly_predictions.csv README.md
+          git commit -m "Automated prediction and README update" || exit 0
           git push

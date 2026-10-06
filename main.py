@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor
 
 print("1. Ingesting live 2026 data, schedules, and depth charts...")
-# Bypass nfl_data_py's broken participation merge by reading the raw parquet file directly
+# Direct parquet ingest bypassing participation merge 404 error
 pbp = pd.read_parquet('https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_2026.parquet')
 schedule = nfl.import_schedules([2026])
 depth_charts = nfl.import_depth_charts([2026])
@@ -118,6 +118,9 @@ full_eval['predicted_tgt_sh'] = model.predict(full_eval[['off_tgt_sh', 'def_tgt_
 full_eval['script_delta'] = full_eval['predicted_tgt_sh'] - full_eval['off_tgt_sh']
 full_eval['Game'] = full_eval['away_team'] + " @ " + full_eval['home_team']
 
+# ---------------------------------------------------------
+# SAVE RAW CSV OUTPUT
+# ---------------------------------------------------------
 cols = ['Game', 'Offense', 'Defense', 'role', 'off_tgt_sh', 'def_tgt_sh_allowed', 'predicted_tgt_sh', 'script_delta']
 active_df = full_eval[cols].copy().sort_values(by='script_delta', ascending=False)
 
@@ -132,7 +135,6 @@ active_df = active_df.rename(columns={
     'script_delta': 'Delta'
 })
 
-# --- Compile Bye Week Entries ---
 bye_rows = []
 for team in bye_teams:
     team_roles = off_profile[off_profile['posteam'] == team].sort_values(by='role')
@@ -150,15 +152,85 @@ for team in bye_teams:
 
 if len(bye_rows) > 0:
     bye_df = pd.DataFrame(bye_rows)
-    final_display_df = pd.concat([active_df, bye_df], ignore_index=True)
+    final_csv_df = pd.concat([active_df, bye_df], ignore_index=True)
 else:
-    final_display_df = active_df
+    final_csv_df = active_df
 
-print(f"\n=== WEEK {target_week} MATCHUP PROJECTIONS (BYES DETECTED: {len(bye_teams)}) ===")
-print(final_display_df.head(10).to_string(index=False))
+final_csv_df.to_csv("weekly_predictions.csv", index=False)
+print("Saved raw CSV to weekly_predictions.csv")
 
-if len(bye_teams) > 0:
-    print(f"\nTeams on Bye in Week {target_week}: {', '.join(bye_teams)}")
+# ---------------------------------------------------------
+# BUILD GITHUB README.MD MARKDOWN TABLES
+# ---------------------------------------------------------
+print("6. Formatting GitHub README.md markdown tables...")
 
-final_display_df.to_csv("weekly_predictions.csv", index=False)
-print(f"\nSuccess: Saved Week {target_week} predictions to weekly_predictions.csv")
+roles = ['WR1', 'WR2', 'WR3', 'TE1', 'TE2', 'RB1', 'RB2']
+
+def format_pct(val, is_delta=False):
+    if pd.isna(val):
+        return "N/A"
+    pct = round(val * 100, 1)
+    if is_delta:
+        prefix = "+" if pct > 0 else ""
+        text = f"{prefix}{pct:.1f}%"
+        return f"**{text}**" if pct > 0 else text
+    return f"{pct:.1f}%"
+
+def build_team_table(game_df, offense_team, defense_team):
+    subset = game_df[(game_df['Offense'] == offense_team) & (game_df['Defense'] == defense_team)]
+    row_map = {r['role']: r for _, r in subset.iterrows()}
+    
+    header = f"**Offense: {offense_team}** (vs {defense_team} Defense)\n\n"
+    table = "| Metric | " + " | ".join(roles) + " |\n"
+    table += "| :--- | " + " | ".join([":---:"] * len(roles)) + " |\n"
+    
+    # Off Avg row
+    off_vals = [format_pct(row_map.get(r, {}).get('off_tgt_sh')) for r in roles]
+    table += f"| **Off Avg** | " + " | ".join(off_vals) + " |\n"
+    
+    # Def Allows row
+    def_vals = [format_pct(row_map.get(r, {}).get('def_tgt_sh_allowed')) for r in roles]
+    table += f"| **{defense_team} Allows** | " + " | ".join(def_vals) + " |\n"
+    
+    # Projected row
+    proj_vals = [format_pct(row_map.get(r, {}).get('predicted_tgt_sh')) for r in roles]
+    table += f"| **Projected** | " + " | ".join(proj_vals) + " |\n"
+    
+    # Delta row
+    delta_vals = [format_pct(row_map.get(r, {}).get('script_delta'), is_delta=True) for r in roles]
+    table += f"| **Delta** | " + " | ".join(delta_vals) + " |\n\n"
+    
+    return header + table
+
+markdown_content = f"# NFL Fantasy Matchup Target Share Projections\n\n"
+markdown_content += f"> **Status:** Completed through Week {latest_completed_week} | **Active Board:** Week {target_week}\n\n"
+
+# Loop each scheduled game
+unique_games = target_games[['away_team', 'home_team']].drop_duplicates()
+for _, game in unique_games.iterrows():
+    away = game['away_team']
+    home = game['home_team']
+    
+    markdown_content += f"## {away} @ {home}\n\n"
+    # Away Offense vs Home Defense
+    markdown_content += build_team_table(full_eval, away, home)
+    # Home Offense vs Away Defense
+    markdown_content += build_team_table(full_eval, home, away)
+    markdown_content += "---\n\n"
+
+# Bye Weeks Section
+if bye_teams:
+    markdown_content += f"## Teams on Bye: {', '.join(bye_teams)}\n\n"
+    for b_team in bye_teams:
+        markdown_content += f"**{b_team} Baseline Target Shares**\n\n"
+        markdown_content += "| Metric | " + " | ".join(roles) + " |\n"
+        markdown_content += "| :--- | " + " | ".join([":---:"] * len(roles)) + " |\n"
+        b_roles = off_profile[off_profile['posteam'] == b_team]
+        b_map = {r['role']: r['off_tgt_sh'] for _, r in b_roles.iterrows()}
+        b_vals = [format_pct(b_map.get(r)) for r in roles]
+        markdown_content += f"| **Off Avg** | " + " | ".join(b_vals) + " |\n\n"
+
+with open("README.md", "w") as f:
+    f.write(markdown_content)
+
+print(f"Success: Saved formatted matchup tables to README.md")
